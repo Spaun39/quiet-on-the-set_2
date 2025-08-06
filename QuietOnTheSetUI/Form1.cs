@@ -1,15 +1,9 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using NAudio.CoreAudioApi;
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
 using System.Drawing;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace QuietOnTheSetUI
@@ -18,6 +12,7 @@ namespace QuietOnTheSetUI
     {
         MMDeviceEnumerator MMDE = new MMDeviceEnumerator();
         MMDevice mmDevice;
+        private Timer _volumeTimer;
         private bool _isLocked = false;
         private string _password;
         private int _maxVolume;
@@ -73,7 +68,22 @@ namespace QuietOnTheSetUI
             }
 
             this.Icon = QuietOnTheSetUI.Properties.Resources.appicon;
+            // Инициализация устройства
             mmDevice = MMDE.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+
+            // Таймер: принудительно применяем лимит каждую секунду
+            _volumeTimer = new Timer();
+            _volumeTimer.Interval = 1000;
+            _volumeTimer.Tick += (s, e) =>
+            {
+                if (_isLocked)
+                {
+                    SetMaxVolume();
+                    //MessageBox.Show("tick");
+                }
+            };
+            _volumeTimer.Start();
+
             notifyIcon1.Icon = QuietOnTheSetUI.Properties.Resources.appicon;
             volumeTrackBar.ValueChanged += VolumeTrackBar_ValueChanged;
             mmDevice.AudioEndpointVolume.OnVolumeNotification += AudioEndpointVolume_OnVolumeNotification;
@@ -185,9 +195,26 @@ namespace QuietOnTheSetUI
 
         private void SetMaxVolume()
         {
-            if (mmDevice.AudioEndpointVolume.MasterVolumeLevelScalar > (_maxVolume / 100f))
+            try
             {
-                mmDevice.AudioEndpointVolume.MasterVolumeLevelScalar = _maxVolume / 100f;
+                // Пересоздаём ссылку на текущее устройство по умолчанию
+                var currentDevice = MMDE.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+
+                if (currentDevice != null && _isLocked)
+                {
+                    var currentScalar = currentDevice.AudioEndpointVolume.MasterVolumeLevelScalar;
+                    var maxScalar = _maxVolume / 100f;
+
+                    if (currentScalar > maxScalar)
+                    {
+                        currentDevice.AudioEndpointVolume.MasterVolumeLevelScalar = maxScalar;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Логировать при необходимости (например, в debug)
+                // System.Diagnostics.Debug.WriteLine("SetMaxVolume error: " + ex.Message);
             }
         }
 
@@ -272,8 +299,8 @@ namespace QuietOnTheSetUI
 
         private void exitButton_Click(object sender, EventArgs e)
         {
-            var response = MessageBox.Show("This will completely shut down the volume control so users can set the volume as loud as they want. Are you sure you want to exit?", "Warning", MessageBoxButtons.YesNo);
-            if (response == DialogResult.Yes)
+            // var response = MessageBox.Show("This will completely shut down the volume control so users can set the volume as loud as they want. Are you sure you want to exit?", "Warning", MessageBoxButtons.YesNo);
+            //if (response == DialogResult.Yes)
             {
                 _exitAllowed = true;
                 Application.Exit();
